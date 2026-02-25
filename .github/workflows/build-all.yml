@@ -1,82 +1,99 @@
-name: Build All Architectures
+name: Release All Builds
 
 on:
-  workflow_dispatch:
+  push:
+    tags:
+      - "*"   # Trigger on any tag (used as version)
 
 permissions:
-  contents: write   # Required to commit & push
+  contents: write  # Needed to push files and create release
 
 jobs:
-  build-and-push:
+  build:
     strategy:
       matrix:
         target:
+          - i686-linux-android
+          - x86_64-linux-android
           - aarch64-linux-android
-          - armv7-linux-androideabi
-          - x86_64-unknown-linux-gnu
           - x86_64-pc-windows-gnu
+          - x86_64-unknown-linux-gnu
     runs-on: ubuntu-latest
 
     steps:
-    # 1️⃣ Checkout repo
+    # 1️⃣ Checkout repo (your workflow, minimal)
     - uses: actions/checkout@v4
 
-    # 2️⃣ Get latest upstream version
-    - name: Get latest upstream version
-      id: get_version
-      run: |
-        VERSION=$(curl -s https://api.github.com/repos/Zeuroux/BuildLimitChanger/releases/latest | jq -r .tag_name)
-        echo "UPSTREAM_VERSION=$VERSION" >> $GITHUB_ENV
-        echo "Upstream version: $VERSION"
-
-    # 3️⃣ Clone BuildLimitChanger
-    - name: Clone BuildLimitChanger
+    # 2️⃣ Clone original BuildLimitChanger
+    - name: Clone original BuildLimitChanger
       run: git clone https://github.com/Zeuroux/BuildLimitChanger.git
 
-    # 4️⃣ Setup Rust
-    - name: Set up Rust
+    # 3️⃣ Setup Rust
+    - name: Setup Rust
       uses: actions-rs/toolchain@v1
       with:
         toolchain: stable
         target: ${{ matrix.target }}
         default: true
 
-    # 5️⃣ Install cargo-ndk for Android targets
+    # 4️⃣ Install cargo-ndk for Android
     - name: Install cargo-ndk
-      if: startsWith(matrix.target, 'aarch64') || startsWith(matrix.target, 'armv7')
-      run: cargo install cargo-ndk
+      if: startsWith(matrix.target, 'aarch64') || startsWith(matrix.target, 'i686')
+      run: cargo install cargo-ndk || true
 
-    # 6️⃣ Build target
-    - name: Build
+    # 5️⃣ Build target
+    - name: Build target
       run: |
+        VERSION=${GITHUB_REF#refs/tags/}  # Use tag name as version
         ARCH_FOLDER=""
         SRC_FOLDER=""
         if [[ "${{ matrix.target }}" == "aarch64-linux-android" ]]; then
+          cd BuildLimitChanger
           cargo ndk -t arm64-v8a -- build --release
           ARCH_FOLDER="arm64-v8a"
-          SRC_FOLDER="BuildLimitChanger/target/aarch64-linux-android/release"
-        elif [[ "${{ matrix.target }}" == "armv7-linux-androideabi" ]]; then
+          SRC_FOLDER="target/aarch64-linux-android/release"
+        elif [[ "${{ matrix.target }}" == "i686-linux-android" ]]; then
+          cd BuildLimitChanger
           cargo ndk -t armeabi-v7a -- build --release
           ARCH_FOLDER="armeabi-v7a"
-          SRC_FOLDER="BuildLimitChanger/target/armv7-linux-androideabi/release"
+          SRC_FOLDER="target/i686-linux-android/release"
         elif [[ "${{ matrix.target }}" == *"windows"* ]]; then
+          cd BuildLimitChanger
           cargo build --target ${{ matrix.target }} --release
           ARCH_FOLDER="windows"
           SRC_FOLDER="target/${{ matrix.target }}/release"
         else
+          cd BuildLimitChanger
           cargo build --target ${{ matrix.target }} --release
           ARCH_FOLDER="linux"
           SRC_FOLDER="target/${{ matrix.target }}/release"
         fi
 
-        mkdir -p ../${UPSTREAM_VERSION}/${ARCH_FOLDER}
-        cp $SRC_FOLDER/*.{so,dll} ../${UPSTREAM_VERSION}/${ARCH_FOLDER}/ || true
+        mkdir -p ../binaries/${VERSION}/${ARCH_FOLDER}
+        cp $SRC_FOLDER/*.{so,dll} ../binaries/${VERSION}/${ARCH_FOLDER}/ || true
 
-    # 7️⃣ Commit & push versioned binaries
-    - name: Commit and push
-      run: |
-        git config user.name "github-actions[bot]"
-        git config user.email "github-actions[bot]@users.noreply.github.com"
-        git add ${UPSTREAM_VERSION}/*
-        git commit -m "Update builds for version ${UPSTREAM_VERSION}" || exit 0
-        git push
+    # 6️⃣ Build Changelog
+    - name: Build Changelog
+      id: github_release
+      uses: mikepenz/release-changelog-builder-action@v4
+      with:
+        commitMode: true
+        configurationJson: |
+          {
+            "template": "{{CHANGELOG}}",
+            "commit_template": "- {{message}} ({{hash}})",
+            "categories": [],
+            "sort": {
+              "order": "ASC"
+            }
+          }
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    # 7️⃣ Create Release
+    - name: Create GitHub Release
+      uses: mikepenz/action-gh-release@v1
+      with:
+        body: ${{ steps.github_release.outputs.changelog }}
+        files: binaries/${GITHUB_REF#refs/tags/}/**/*.so
+               binaries/${GITHUB_REF#refs/tags/}/**/*.dll
