@@ -1,24 +1,27 @@
-name: Release All Builds
+name: Build All Targets
 
 on:
-  push:
-    tags:
-      - "*"   # Trigger on any tag (used as version)
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Upstream version to build'
+        required: true
+        default: 'v1.0.0'
 
 permissions:
-  contents: write  # Needed to push files and create release
+  contents: write   # Needed to commit & push
 
 jobs:
-  build:
+  build-and-push:
+    runs-on: ubuntu-latest
     strategy:
       matrix:
         target:
+          - aarch64-linux-android
           - i686-linux-android
           - x86_64-linux-android
-          - aarch64-linux-android
           - x86_64-pc-windows-gnu
           - x86_64-unknown-linux-gnu
-    runs-on: ubuntu-latest
 
     steps:
     # 1️⃣ Checkout repo
@@ -36,7 +39,7 @@ jobs:
         target: ${{ matrix.target }}
         default: true
 
-    # 4️⃣ Install cargo-ndk for Android targets
+    # 4️⃣ Install cargo-ndk for Android
     - name: Install cargo-ndk
       if: ${{ matrix.target == 'aarch64-linux-android' || matrix.target == 'i686-linux-android' }}
       run: cargo install cargo-ndk || true
@@ -44,16 +47,18 @@ jobs:
     # 5️⃣ Build target
     - name: Build target
       run: |
-        VERSION=${GITHUB_REF#refs/tags/}  # Tag name as version
+        VERSION=${{ github.event.inputs.version }}
         mkdir -p binaries/${VERSION}
 
         if [[ "${{ matrix.target }}" == "aarch64-linux-android" ]]; then
           cd BuildLimitChanger
+          sed -i '/\[lib\]/,/crate-type/ s/^crate-type.*$/crate-type = ["cdylib"]/' Cargo.toml || true
           cargo ndk -t arm64-v8a -- build --release
           mkdir -p ../binaries/${VERSION}/arm64-v8a
           cp target/aarch64-linux-android/release/*.so ../binaries/${VERSION}/arm64-v8a/ || true
         elif [[ "${{ matrix.target }}" == "i686-linux-android" ]]; then
           cd BuildLimitChanger
+          sed -i '/\[lib\]/,/crate-type/ s/^crate-type.*$/crate-type = ["cdylib"]/' Cargo.toml || true
           cargo ndk -t armeabi-v7a -- build --release
           mkdir -p ../binaries/${VERSION}/armeabi-v7a
           cp target/i686-linux-android/release/*.so ../binaries/${VERSION}/armeabi-v7a/ || true
@@ -69,29 +74,11 @@ jobs:
           cp target/${{ matrix.target }}/release/*.so ../binaries/${VERSION}/linux/ || true
         fi
 
-    # 6️⃣ Build Changelog
-    - name: Build Changelog
-      id: github_release
-      uses: mikepenz/release-changelog-builder-action@v4
-      with:
-        commitMode: true
-        configurationJson: |
-          {
-            "template": "{{CHANGELOG}}",
-            "commit_template": "- {{message}} ({{hash}})",
-            "categories": [],
-            "sort": {
-              "order": "ASC"
-            }
-          }
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-    # 7️⃣ Create GitHub Release
-    - name: Create Release
-      uses: mikepenz/action-gh-release@v1
-      with:
-        body: ${{ steps.github_release.outputs.changelog }}
-        files: |
-          binaries/${GITHUB_REF#refs/tags/}/**/*.so
-          binaries/${GITHUB_REF#refs/tags/}/**/*.dll
+    # 6️⃣ Commit & push binaries
+    - name: Commit and push built files
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git add binaries/${{ github.event.inputs.version }}/*
+        git commit -m "Build binaries for version ${{ github.event.inputs.version }}" || echo "No changes to commit"
+        git push
