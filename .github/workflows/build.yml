@@ -4,24 +4,29 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: write   # Required to commit & push
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
 
     steps:
+    # 1️⃣ Checkout repo
     - uses: actions/checkout@v4
 
+    # 2️⃣ Get latest upstream version
     - name: Get latest upstream version
       id: get_version
       run: |
         VERSION=$(curl -s https://api.github.com/repos/Zeuroux/BuildLimitChanger/releases/latest | jq -r .tag_name)
         echo "UPSTREAM_VERSION=$VERSION" >> $GITHUB_ENV
+        echo "Upstream version: $VERSION"
 
+    # 3️⃣ Clone BuildLimitChanger
     - name: Clone BuildLimitChanger
       run: git clone https://github.com/Zeuroux/BuildLimitChanger.git
 
+    # 4️⃣ Setup Rust
     - name: Set up Rust
       uses: actions-rs/toolchain@v1
       with:
@@ -29,9 +34,11 @@ jobs:
         target: aarch64-linux-android
         default: true
 
+    # 5️⃣ Install cargo-ndk
     - name: Install cargo-ndk
       run: cargo install cargo-ndk
 
+    # 6️⃣ Build ARM64 .so
     - name: Build ARM64 .so
       run: |
         cd BuildLimitChanger
@@ -40,18 +47,17 @@ jobs:
         echo "List target folder:"
         ls -l target/aarch64-linux-android/release/
 
+    # 7️⃣ Copy .so into versioned folder
     - name: Copy .so into versioned folder
       run: |
         mkdir -p ../arm64-v8a/v${UPSTREAM_VERSION}
-        for f in target/aarch64-linux-android/release/*.so; do
-          BASENAME=$(basename "$f")
-          cp "$f" "../arm64-v8a/v${UPSTREAM_VERSION}/${BASENAME}"
-        done
+        cp BuildLimitChanger/target/aarch64-linux-android/release/*.so ../arm64-v8a/v${UPSTREAM_VERSION}/
 
-    - name: Commit and push
+    # 8️⃣ Commit & push
+    - name: Commit and push versioned .so
       run: |
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
-        git add arm64-v8a/v${UPSTREAM_VERSION}/*.so
+        git add arm64-v8a/v${UPSTREAM_VERSION}/libbuildlimitchanger.so
         git commit -m "Update ARM64 .so v${UPSTREAM_VERSION}" || exit 0
         git push
