@@ -2,129 +2,61 @@ name: Build All Targets
 
 on:
   workflow_dispatch:
-    inputs:
-      version:
-        description: 'Upstream version to build'
-        required: true
-        default: 'v1.0.0'
 
 permissions:
   contents: write
 
 jobs:
-  build-arm64:
+  build:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target:
+          - i686-linux-android
+          - x86_64-linux-android
+          - aarch64-linux-android
+          - x86_64-pc-windows-gnu
+          - x86_64-unknown-linux-gnu
     steps:
+      # 1️⃣ Checkout your fork
       - uses: actions/checkout@v4
-      - name: Clone BuildLimitChanger
-        run: git clone https://github.com/Zeuroux/BuildLimitChanger.git
-      - name: Setup Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          target: aarch64-linux-android
-          default: true
-      - name: Install cargo-ndk
-        run: cargo install cargo-ndk
-      - name: Build ARM64 .so
-        run: |
-          VERSION=${{ github.event.inputs.version }}
-          cd BuildLimitChanger
-          sed -i '/\[lib\]/,/crate-type/ s/^crate-type.*$/crate-type = ["cdylib"]/' Cargo.toml || true
-          cargo ndk -t arm64-v8a -- build --release
-          mkdir -p ../binaries/${VERSION}/arm64-v8a
-          cp target/aarch64-linux-android/release/*.so ../binaries/${VERSION}/arm64-v8a/ || true
-      - name: Commit & push
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add binaries/${{ github.event.inputs.version }}/arm64-v8a/*
-          git commit -m "Build ARM64 ${VERSION}" || echo "No changes"
-          git push
 
-  build-armv7:
-    runs-on: ubuntu-latest
-    needs: build-arm64
-    steps:
-      - uses: actions/checkout@v4
-      - name: Clone BuildLimitChanger
+      # 2️⃣ Clone upstream repo
+      - name: Clone upstream BuildLimitChanger
         run: git clone https://github.com/Zeuroux/BuildLimitChanger.git
-      - name: Setup Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          target: i686-linux-android
-          default: true
-      - name: Install cargo-ndk
-        run: cargo install cargo-ndk
-      - name: Build ARMv7 .so
-        run: |
-          VERSION=${{ github.event.inputs.version }}
-          cd BuildLimitChanger
-          sed -i '/\[lib\]/,/crate-type/ s/^crate-type.*$/crate-type = ["cdylib"]/' Cargo.toml || true
-          cargo ndk -t armeabi-v7a -- build --release
-          mkdir -p ../binaries/${VERSION}/armeabi-v7a
-          cp target/i686-linux-android/release/*.so ../binaries/${VERSION}/armeabi-v7a/ || true
-      - name: Commit & push
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add binaries/${{ github.event.inputs.version }}/armeabi-v7a/*
-          git commit -m "Build ARMv7 ${VERSION}" || echo "No changes"
-          git push
 
-  build-linux-x86_64:
-    runs-on: ubuntu-latest
-    needs: build-armv7
-    steps:
-      - uses: actions/checkout@v4
-      - name: Clone BuildLimitChanger
-        run: git clone https://github.com/Zeuroux/BuildLimitChanger.git
+      # 3️⃣ Setup Rust
       - name: Setup Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          target: x86_64-unknown-linux-gnu
-          default: true
-      - name: Build Linux x86_64 .so
-        run: |
-          VERSION=${{ github.event.inputs.version }}
-          cd BuildLimitChanger
-          cargo build --target x86_64-unknown-linux-gnu --release
-          mkdir -p ../binaries/${VERSION}/linux-x86_64
-          cp target/x86_64-unknown-linux-gnu/release/*.so ../binaries/${VERSION}/linux-x86_64/ || true
-      - name: Commit & push
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add binaries/${{ github.event.inputs.version }}/linux-x86_64/*
-          git commit -m "Build Linux x86_64 ${VERSION}" || echo "No changes"
-          git push
+        run: rustup update stable
 
-  build-windows-x86_64:
-    runs-on: ubuntu-latest
-    needs: build-linux-x86_64
-    steps:
-      - uses: actions/checkout@v4
-      - name: Clone BuildLimitChanger
-        run: git clone https://github.com/Zeuroux/BuildLimitChanger.git
-      - name: Setup Rust
-        uses: actions-rs/toolchain@v1
+      # 4️⃣ Install cross-compilation tools
+      - name: Setup cross toolchain
+        uses: taiki-e/setup-cross-toolchain-action@v1
         with:
-          toolchain: stable
-          target: x86_64-pc-windows-gnu
-          default: true
-      - name: Build Windows x86_64 .dll
+          target: ${{ matrix.target }}
+
+      # 5️⃣ Build
+      - name: Build
         run: |
-          VERSION=${{ github.event.inputs.version }}
           cd BuildLimitChanger
-          cargo build --target x86_64-pc-windows-gnu --release
-          mkdir -p ../binaries/${VERSION}/windows-x86_64
-          cp target/x86_64-pc-windows-gnu/release/*.dll ../binaries/${VERSION}/windows-x86_64/ || true
-      - name: Commit & push
+          cargo build --profile release
+        env:
+          CARGO_PROFILE_RELEASE_LTO: "fat"
+          CARGO_PROFILE_RELEASE_STRIP: "symbols"
+          CARGO_PROFILE_RELEASE_CODEGEN_UNITS: 1
+
+      # 6️⃣ Copy outputs into versioned folders
+      - name: Copy binaries
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add binaries/${{ github.event.inputs.version }}/windows-x86_64/*
-          git commit -m "Build Windows x86_64 ${VERSION}" || echo "No changes"
-          git push
+          mkdir -p ../binaries/${{ matrix.target }}
+          if [[ "${{ matrix.target }}" == *"windows"* ]]; then
+            cp BuildLimitChanger/target/${{ matrix.target }}/release/BuildLimitChanger.dll ../binaries/${{ matrix.target }}/
+          else
+            cp BuildLimitChanger/target/${{ matrix.target }}/release/libBuildLimitChanger.so ../binaries/${{ matrix.target }}/
+          fi
+
+      # 7️⃣ Push artifacts (optional)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binaries-${{ matrix.target }}
+          path: binaries/${{ matrix.target }}/
