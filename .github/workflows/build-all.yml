@@ -1,10 +1,10 @@
-name: Build All Targets
+name: Build and Commit All Targets
 
 on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: write  # Needed to push files back
 
 jobs:
   build:
@@ -17,25 +17,34 @@ jobs:
           - aarch64-linux-android
           - x86_64-pc-windows-gnu
           - x86_64-unknown-linux-gnu
+
     steps:
-      # 1️⃣ Checkout your fork
+      # 1️⃣ Checkout your fork (where binaries will be pushed)
       - uses: actions/checkout@v4
 
-      # 2️⃣ Clone upstream repo
+      # 2️⃣ Get latest upstream version
+      - name: Get latest upstream version
+        id: version
+        run: |
+          VERSION=$(curl -s https://api.github.com/repos/Zeuroux/BuildLimitChanger/releases/latest | jq -r .tag_name)
+          echo "UPSTREAM_VERSION=$VERSION" >> $GITHUB_ENV
+          echo "Upstream version: $VERSION"
+
+      # 3️⃣ Clone upstream repository
       - name: Clone upstream BuildLimitChanger
         run: git clone https://github.com/Zeuroux/BuildLimitChanger.git
 
-      # 3️⃣ Setup Rust
+      # 4️⃣ Setup Rust
       - name: Setup Rust
         run: rustup update stable
 
-      # 4️⃣ Install cross-compilation tools
+      # 5️⃣ Install cross-compilation tools
       - name: Setup cross toolchain
         uses: taiki-e/setup-cross-toolchain-action@v1
         with:
           target: ${{ matrix.target }}
 
-      # 5️⃣ Build
+      # 6️⃣ Build the target
       - name: Build
         run: |
           cd BuildLimitChanger
@@ -45,18 +54,21 @@ jobs:
           CARGO_PROFILE_RELEASE_STRIP: "symbols"
           CARGO_PROFILE_RELEASE_CODEGEN_UNITS: 1
 
-      # 6️⃣ Copy outputs into versioned folders
-      - name: Copy binaries
+      # 7️⃣ Copy binaries into versioned folder
+      - name: Copy binaries into versioned folder
         run: |
-          mkdir -p ../binaries/${{ matrix.target }}
+          mkdir -p ../${UPSTREAM_VERSION}/${{ matrix.target }}
           if [[ "${{ matrix.target }}" == *"windows"* ]]; then
-            cp BuildLimitChanger/target/${{ matrix.target }}/release/BuildLimitChanger.dll ../binaries/${{ matrix.target }}/
+            cp BuildLimitChanger/target/${{ matrix.target }}/release/BuildLimitChanger.dll ../${UPSTREAM_VERSION}/${{ matrix.target }}/
           else
-            cp BuildLimitChanger/target/${{ matrix.target }}/release/libBuildLimitChanger.so ../binaries/${{ matrix.target }}/
+            cp BuildLimitChanger/target/${{ matrix.target }}/release/libBuildLimitChanger.so ../${UPSTREAM_VERSION}/${{ matrix.target }}/
           fi
 
-      # 7️⃣ Push artifacts (optional)
-      - uses: actions/upload-artifact@v4
-        with:
-          name: binaries-${{ matrix.target }}
-          path: binaries/${{ matrix.target }}/
+      # 8️⃣ Commit and push binaries to your fork
+      - name: Commit and push binaries
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add ${UPSTREAM_VERSION}/${{ matrix.target }}/*
+          git commit -m "Add binaries for ${UPSTREAM_VERSION} [${{ matrix.target }}]" || echo "No changes to commit"
+          git push
