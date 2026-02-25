@@ -1,10 +1,10 @@
-name: Build All
+name: Build All Binaries
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:   # ✅ Allows manual trigger
 
 permissions:
-  contents: write   # Needed to commit & push
+  contents: write      # ✅ Needed to commit & push
 
 jobs:
   build-all:
@@ -18,8 +18,8 @@ jobs:
     - name: Clone BuildLimitChanger
       run: git clone https://github.com/Zeuroux/BuildLimitChanger.git
 
-    # 3️⃣ Setup Rust
-    - name: Set up Rust
+    # 3️⃣ Set up Rust
+    - name: Set up Rust toolchain
       uses: actions-rs/toolchain@v1
       with:
         toolchain: stable
@@ -38,7 +38,7 @@ jobs:
     - name: Install cargo-ndk
       run: cargo install cargo-ndk
 
-    # 6️⃣ Add Rust targets for Android + Windows
+    # 6️⃣ Add Rust targets
     - name: Add Rust targets
       run: |
         rustup target add aarch64-linux-android
@@ -46,7 +46,7 @@ jobs:
         rustup target add x86_64-pc-windows-msvc
         rustup target add x86_64-unknown-linux-gnu
 
-    # 7️⃣ Build Android ARMv7 .so
+    # 7️⃣ Build Android ARMv7
     - name: Build Android ARMv7 .so
       run: |
         cd BuildLimitChanger
@@ -62,7 +62,7 @@ EOF
         mkdir -p ../../binaries/android/armeabi-v7a
         cp target/armv7-linux-androideabi/release/**/*.so ../../binaries/android/armeabi-v7a/
 
-    # 8️⃣ Build Android ARM64 .so
+    # 8️⃣ Build Android ARM64
     - name: Build Android ARM64 .so
       run: |
         cd BuildLimitChanger
@@ -70,15 +70,15 @@ EOF
         mkdir -p ../../binaries/android/arm64-v8a
         cp target/aarch64-linux-android/release/**/*.so ../../binaries/android/arm64-v8a/
 
-    # 9️⃣ Build Windows x64 DLL
-    - name: Build Windows x64 .dll
+    # 9️⃣ Build Windows x64
+    - name: Build Windows x64 DLL
       run: |
         cd BuildLimitChanger
         cargo build --target x86_64-pc-windows-msvc --release
         mkdir -p ../../binaries/windows/x64
         cp target/x86_64-pc-windows-msvc/release/*.dll* ../../binaries/windows/x64/
 
-    # 🔟 Build Linux x64 .so
+    # 🔟 Build Linux x64
     - name: Build Linux x64 .so
       run: |
         cd BuildLimitChanger
@@ -86,11 +86,11 @@ EOF
         mkdir -p ../../binaries/linux/x64
         cp target/x86_64-unknown-linux-gnu/release/lib*.so ../../binaries/linux/x64/
 
-    # 1️⃣1️⃣ Commit all builds
-    - name: Commit and push
+    # 1️⃣1️⃣ Commit and push binaries
+    - name: Commit binaries
       run: |
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
         git add binaries
-        git commit -m "Add all build binaries via workflow $(date -u +'%Y-%m-%d %H:%M:%S')" || exit 0
+        git commit -m "Add all build binaries $(date -u +'%Y-%m-%d %H:%M:%S')" || exit 0
         git push
