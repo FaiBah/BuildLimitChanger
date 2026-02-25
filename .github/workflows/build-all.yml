@@ -4,84 +4,88 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write   # Needed to commit & push
+  contents: write
 
 jobs:
-  build-and-push:
+  build-all:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        target:
-          - i686-linux-android
-          - x86_64-linux-android
-          - aarch64-linux-android
-          - x86_64-pc-windows-gnu
-          - x86_64-unknown-linux-gnu
-
     steps:
-    # 1️⃣ Checkout repo
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    # 2️⃣ Get latest upstream version
-    - name: Get latest upstream version
-      id: get_version
-      run: |
-        VERSION=$(curl -s https://api.github.com/repos/Zeuroux/BuildLimitChanger/releases/latest | jq -r .tag_name)
-        echo "UPSTREAM_VERSION=$VERSION" >> $GITHUB_ENV
-        echo "Upstream version: $VERSION"
+      # 1️⃣ Get latest upstream version
+      - name: Get latest upstream version
+        id: version
+        run: |
+          VERSION=$(curl -s https://api.github.com/repos/Zeuroux/BuildLimitChanger/releases/latest | jq -r .tag_name)
+          VERSION=${VERSION#v}  # remove leading 'v' if exists
+          echo "UPSTREAM_VERSION=$VERSION" >> $GITHUB_ENV
+          echo "Upstream version: $VERSION"
 
-    # 3️⃣ Clone BuildLimitChanger
-    - name: Clone BuildLimitChanger
-      run: git clone https://github.com/Zeuroux/BuildLimitChanger.git
+      # 2️⃣ Clone upstream
+      - name: Clone upstream BuildLimitChanger
+        run: git clone https://github.com/Zeuroux/BuildLimitChanger.git
 
-    # 4️⃣ Setup Rust
-    - name: Set up Rust
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: stable
-        target: ${{ matrix.target }}
-        default: true
+      # 3️⃣ Setup Rust
+      - name: Setup Rust
+        run: rustup update stable
 
-    # 5️⃣ Install cargo-ndk (only needed for Android targets)
-    - name: Install cargo-ndk
-      if: startsWith(matrix.target, 'i686') || startsWith(matrix.target, 'x86_64-linux') || startsWith(matrix.target, 'aarch64-linux')
-      run: cargo install cargo-ndk
+      # 4️⃣ Build i686-linux-android
+      - name: Build i686-linux-android
+        uses: taiki-e/setup-cross-toolchain-action@v1
+        with:
+          target: i686-linux-android
+      - run: |
+          cd BuildLimitChanger
+          cargo build --target i686-linux-android --release
+          mkdir -p ../binaries/v${UPSTREAM_VERSION}/i686-linux-android
+          cp target/i686-linux-android/release/*.so ../binaries/v${UPSTREAM_VERSION}/i686-linux-android/
 
-    # 6️⃣ Build target
-    - name: Build target
-      run: |
-        cd BuildLimitChanger
-        if [[ "${{ matrix.target }}" == *windows* ]]; then
-          cargo build --target ${{ matrix.target }} --release
-        else
-          # Android/Linux
-          if [[ "${{ matrix.target }}" == aarch64-linux-android ]]; then
-            cargo ndk -t arm64-v8a -- build --release
-          elif [[ "${{ matrix.target }}" == i686-linux-android ]]; then
-            cargo ndk -t armeabi-v7a -- build --release
-          elif [[ "${{ matrix.target }}" == x86_64-linux-android ]]; then
-            cargo ndk -t x86_64 -- build --release
-          else
-            cargo build --target ${{ matrix.target }} --release
-          fi
-        fi
+      # 5️⃣ Build x86_64-linux-android
+      - name: Build x86_64-linux-android
+        uses: taiki-e/setup-cross-toolchain-action@v1
+        with:
+          target: x86_64-linux-android
+      - run: |
+          cd BuildLimitChanger
+          cargo build --target x86_64-linux-android --release
+          mkdir -p ../binaries/v${UPSTREAM_VERSION}/x86_64-linux-android
+          cp target/x86_64-linux-android/release/*.so ../binaries/v${UPSTREAM_VERSION}/x86_64-linux-android/
 
-    # 7️⃣ Copy binaries into versioned folder
-    - name: Copy binaries
-      run: |
-        VERSION_DIR="../binaries/v${UPSTREAM_VERSION}/${{ matrix.target }}"
-        mkdir -p $VERSION_DIR
-        cd BuildLimitChanger
-        if [[ "${{ matrix.target }}" == *windows* ]]; then
-          cp target/${{ matrix.target }}/release/BuildLimitChanger.dll $VERSION_DIR/
-        else
-          cp target/${{ matrix.target }}/release/libBuildLimitChanger.so $VERSION_DIR/
+      # 6️⃣ Build aarch64-linux-android
+      - name: Build aarch64-linux-android
+        uses: taiki-e/setup-cross-toolchain-action@v1
+        with:
+          target: aarch64-linux-android
+      - run: |
+          cd BuildLimitChanger
+          cargo build --target aarch64-linux-android --release
+          mkdir -p ../binaries/v${UPSTREAM_VERSION}/aarch64-linux-android
+          cp target/aarch64-linux-android/release/*.so ../binaries/v${UPSTREAM_VERSION}/aarch64-linux-android/
 
-    # 8️⃣ Commit & push
-    - name: Commit and push
-      run: |
-        git config user.name "github-actions[bot]"
-        git config user.email "github-actions[bot]@users.noreply.github.com"
-        git add ../binaries/v${UPSTREAM_VERSION}/${{ matrix.target }}/*
-        git commit -m "Add binaries for ${{ matrix.target }} v${UPSTREAM_VERSION}" || exit 0
-        git push
+      # 7️⃣ Build x86_64-pc-windows-gnu
+      - name: Build x86_64-pc-windows-gnu
+        uses: taiki-e/setup-cross-toolchain-action@v1
+        with:
+          target: x86_64-pc-windows-gnu
+      - run: |
+          cd BuildLimitChanger
+          cargo build --target x86_64-pc-windows-gnu --release
+          mkdir -p ../binaries/v${UPSTREAM_VERSION}/x86_64-pc-windows-gnu
+          cp target/x86_64-pc-windows-gnu/release/*.dll ../binaries/v${UPSTREAM_VERSION}/x86_64-pc-windows-gnu/
+
+      # 8️⃣ Build x86_64-unknown-linux-gnu
+      - name: Build x86_64-unknown-linux-gnu
+        run: |
+          cd BuildLimitChanger
+          cargo build --target x86_64-unknown-linux-gnu --release
+          mkdir -p ../binaries/v${UPSTREAM_VERSION}/x86_64-unknown-linux-gnu
+          cp target/x86_64-unknown-linux-gnu/release/*.so ../binaries/v${UPSTREAM_VERSION}/x86_64-unknown-linux-gnu/
+
+      # 9️⃣ Commit and push binaries
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add binaries/v${UPSTREAM_VERSION}/*
+          git commit -m "Add binaries for v${UPSTREAM_VERSION}" || echo "No changes to commit"
+          git push
