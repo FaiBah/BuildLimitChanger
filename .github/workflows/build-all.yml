@@ -1,0 +1,82 @@
+name: Build All Architectures
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write   # Required to commit & push
+
+jobs:
+  build-and-push:
+    strategy:
+      matrix:
+        target:
+          - aarch64-linux-android
+          - armv7-linux-androideabi
+          - x86_64-unknown-linux-gnu
+          - x86_64-pc-windows-gnu
+    runs-on: ubuntu-latest
+
+    steps:
+    # 1️⃣ Checkout repo
+    - uses: actions/checkout@v4
+
+    # 2️⃣ Get latest upstream version
+    - name: Get latest upstream version
+      id: get_version
+      run: |
+        VERSION=$(curl -s https://api.github.com/repos/Zeuroux/BuildLimitChanger/releases/latest | jq -r .tag_name)
+        echo "UPSTREAM_VERSION=$VERSION" >> $GITHUB_ENV
+        echo "Upstream version: $VERSION"
+
+    # 3️⃣ Clone BuildLimitChanger
+    - name: Clone BuildLimitChanger
+      run: git clone https://github.com/Zeuroux/BuildLimitChanger.git
+
+    # 4️⃣ Setup Rust
+    - name: Set up Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        target: ${{ matrix.target }}
+        default: true
+
+    # 5️⃣ Install cargo-ndk for Android targets
+    - name: Install cargo-ndk
+      if: startsWith(matrix.target, 'aarch64') || startsWith(matrix.target, 'armv7')
+      run: cargo install cargo-ndk
+
+    # 6️⃣ Build target
+    - name: Build
+      run: |
+        ARCH_FOLDER=""
+        SRC_FOLDER=""
+        if [[ "${{ matrix.target }}" == "aarch64-linux-android" ]]; then
+          cargo ndk -t arm64-v8a -- build --release
+          ARCH_FOLDER="arm64-v8a"
+          SRC_FOLDER="BuildLimitChanger/target/aarch64-linux-android/release"
+        elif [[ "${{ matrix.target }}" == "armv7-linux-androideabi" ]]; then
+          cargo ndk -t armeabi-v7a -- build --release
+          ARCH_FOLDER="armeabi-v7a"
+          SRC_FOLDER="BuildLimitChanger/target/armv7-linux-androideabi/release"
+        elif [[ "${{ matrix.target }}" == *"windows"* ]]; then
+          cargo build --target ${{ matrix.target }} --release
+          ARCH_FOLDER="windows"
+          SRC_FOLDER="target/${{ matrix.target }}/release"
+        else
+          cargo build --target ${{ matrix.target }} --release
+          ARCH_FOLDER="linux"
+          SRC_FOLDER="target/${{ matrix.target }}/release"
+        fi
+
+        mkdir -p ../${UPSTREAM_VERSION}/${ARCH_FOLDER}
+        cp $SRC_FOLDER/*.{so,dll} ../${UPSTREAM_VERSION}/${ARCH_FOLDER}/ || true
+
+    # 7️⃣ Commit & push versioned binaries
+    - name: Commit and push
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git add ${UPSTREAM_VERSION}/*
+        git commit -m "Update builds for version ${UPSTREAM_VERSION}" || exit 0
+        git push
