@@ -1,21 +1,19 @@
-name: Build ARM64 .so
+name: Build ARM64 and upload all
 
 on:
-  workflow_dispatch:   # Manual trigger
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-    # 1️⃣ Checkout your repo
-    - uses: actions/checkout@v4
+    - name: Checkout repo
+      uses: actions/checkout@v4
 
-    # 2️⃣ Clone original repo
-    - name: Clone BuildLimitChanger
+    - name: Clone upstream BuildLimitChanger
       run: git clone https://github.com/Zeuroux/BuildLimitChanger.git
 
-    # 3️⃣ Setup Rust toolchain
     - name: Set up Rust
       uses: actions-rs/toolchain@v1
       with:
@@ -23,8 +21,7 @@ jobs:
         target: aarch64-linux-android
         default: true
 
-    # 4️⃣ Cache Rust dependencies and build artifacts
-    - name: Cache cargo registry & target
+    - name: Cache Rust dependencies
       uses: actions/cache@v3
       with:
         path: |
@@ -33,23 +30,20 @@ jobs:
           BuildLimitChanger/target
         key: ${{ runner.os }}-cargo-${{ hashFiles('BuildLimitChanger/Cargo.lock') }}
 
-    # 5️⃣ Install cargo-ndk
     - name: Install cargo-ndk
       run: cargo install cargo-ndk
 
-    # 6️⃣ Build ARM64 .so
     - name: Build ARM64 .so
       run: |
         cd BuildLimitChanger
+        sed -i '/\[lib\]/,/crate-type/ s/^crate-type.*$/crate-type = ["cdylib"]/' Cargo.toml || true
         cargo ndk -t arm64-v8a -- build --release
 
-    # 7️⃣ List build output for debugging
     - name: List build output
       run: ls -R BuildLimitChanger/target/aarch64-linux-android/release/
 
-    # 8️⃣ Upload artifact (wildcard ensures correct .so is uploaded)
-    - name: Upload ARM64 .so
+    - name: Upload all build files
       uses: actions/upload-artifact@v4
       with:
-        name: buildlimitchanger-arm64
-        path: BuildLimitChanger/target/aarch64-linux-android/release/deps/libbuild*.so
+        name: buildlimitchanger-arm64-all
+        path: BuildLimitChanger/target/aarch64-linux-android/release/
