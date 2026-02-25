@@ -8,10 +8,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    # 1️⃣ Checkout your repo
+    # 1️⃣ Checkout repo (disable default credentials for push)
     - uses: actions/checkout@v4
       with:
-        persist-credentials: false   # We'll push manually using GITHUB_TOKEN
+        persist-credentials: false
 
     # 2️⃣ Clone upstream BuildLimitChanger
     - name: Clone BuildLimitChanger
@@ -25,7 +25,7 @@ jobs:
         target: aarch64-linux-android
         default: true
 
-    # 4️⃣ Cache Rust dependencies and target
+    # 4️⃣ Cache Rust dependencies and target folder
     - name: Cache Rust
       uses: actions/cache@v3
       with:
