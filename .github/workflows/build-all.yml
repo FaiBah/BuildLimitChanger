@@ -25,55 +25,57 @@ jobs:
       - name: Setup Rust
         run: rustup update stable
 
-      - name: Set targets
+      - name: Build i686-linux-android
+        uses: taiki-e/setup-cross-toolchain-action@v1
+        with:
+          target: i686-linux-android
+      - run: |
+          cd BuildLimitChanger
+          cargo build --target i686-linux-android --release
+          mkdir -p ../v${UPSTREAM_VERSION}/i686-linux-android
+          cp target/i686-linux-android/release/*.so ../v${UPSTREAM_VERSION}/i686-linux-android/
+
+      - name: Build x86_64-linux-android
+        uses: taiki-e/setup-cross-toolchain-action@v1
+        with:
+          target: x86_64-linux-android
+      - run: |
+          cd BuildLimitChanger
+          cargo build --target x86_64-linux-android --release
+          mkdir -p ../v${UPSTREAM_VERSION}/x86_64-linux-android
+          cp target/x86_64-linux-android/release/*.so ../v${UPSTREAM_VERSION}/x86_64-linux-android/
+
+      - name: Build aarch64-linux-android
+        uses: taiki-e/setup-cross-toolchain-action@v1
+        with:
+          target: aarch64-linux-android
+      - run: |
+          cd BuildLimitChanger
+          cargo build --target aarch64-linux-android --release
+          mkdir -p ../v${UPSTREAM_VERSION}/aarch64-linux-android
+          cp target/aarch64-linux-android/release/*.so ../v${UPSTREAM_VERSION}/aarch64-linux-android/
+
+      - name: Build x86_64-pc-windows-gnu
+        uses: taiki-e/setup-cross-toolchain-action@v1
+        with:
+          target: x86_64-pc-windows-gnu
+      - run: |
+          cd BuildLimitChanger
+          cargo build --target x86_64-pc-windows-gnu --release
+          mkdir -p ../v${UPSTREAM_VERSION}/x86_64-pc-windows-gnu
+          cp target/x86_64-pc-windows-gnu/release/*.dll ../v${UPSTREAM_VERSION}/x86_64-pc-windows-gnu/
+
+      - name: Build x86_64-unknown-linux-gnu
         run: |
-          echo "TARGETS=i686-linux-android x86_64-linux-android aarch64-linux-android x86_64-pc-windows-gnu x86_64-unknown-linux-gnu" >> $GITHUB_ENV
-
-      # Build each target one by one
-      - name: Build targets
-        run: |
-          for TARGET in $TARGETS; do
-            echo "=== Building $TARGET ==="
-
-            # Use GitHub Action to setup cross-toolchain
-            if [[ "$TARGET" == *"windows"* ]] || [[ "$TARGET" == *"linux"* ]]; then
-              echo "Using setup-cross-toolchain-action for $TARGET"
-              gh workflow run taiki-e/setup-cross-toolchain-action@v1 --target $TARGET
-            fi
-
-            cd BuildLimitChanger
-            cargo build --target $TARGET --profile release \
-              CARGO_PROFILE_RELEASE_LTO="fat" \
-              CARGO_PROFILE_RELEASE_STRIP="symbols" \
-              CARGO_PROFILE_RELEASE_CODEGEN_UNITS="1"
-            cd ..
-
-            # Prepare versioned folder
-            mkdir -p v${UPSTREAM_VERSION}/$TARGET
-
-            # Copy binary if exists
-            if [[ "$TARGET" == *"windows"* ]]; then
-              BIN_PATH="BuildLimitChanger/target/$TARGET/release/BuildLimitChanger.dll"
-            else
-              BIN_PATH="BuildLimitChanger/target/$TARGET/release/libBuildLimitChanger.so"
-            fi
-
-            if [[ -f "$BIN_PATH" ]]; then
-              cp "$BIN_PATH" v${UPSTREAM_VERSION}/$TARGET/
-              echo "Copied $BIN_PATH to v${UPSTREAM_VERSION}/$TARGET/"
-            else
-              echo "No binary found for $TARGET, skipping"
-            fi
-          done
+          cd BuildLimitChanger
+          cargo build --target x86_64-unknown-linux-gnu --release
+          mkdir -p ../v${UPSTREAM_VERSION}/x86_64-unknown-linux-gnu
+          cp target/x86_64-unknown-linux-gnu/release/*.so ../v${UPSTREAM_VERSION}/x86_64-unknown-linux-gnu/
 
       - name: Commit and push binaries
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          FILES=$(find v${UPSTREAM_VERSION} -type f -name "*.so" -o -name "*.dll")
-          if [[ -n "$FILES" ]]; then
-            git add $FILES
-            git commit -m "Add binaries for ${UPSTREAM_VERSION}" || echo "No changes to commit"
-            git push
-          else
-            echo "No binaries to commit"
+          git add v${UPSTREAM_VERSION}/*
+          git commit -m "Add binaries for ${UPSTREAM_VERSION}" || echo "No changes to commit"
+          git push
