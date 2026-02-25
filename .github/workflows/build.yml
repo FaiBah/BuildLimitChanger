@@ -37,19 +37,21 @@ jobs:
         cd BuildLimitChanger
         sed -i '/\[lib\]/,/crate-type/ s/^crate-type.*$/crate-type = ["cdylib"]/' Cargo.toml || true
         cargo ndk -t arm64-v8a -- build --release
+        echo "List target folder:"
+        ls -l target/aarch64-linux-android/release/
 
-    - name: Copy .so with upstream version
+    - name: Copy .so into versioned folder
       run: |
-        mkdir -p ../arm64-v8a
+        mkdir -p ../arm64-v8a/v${UPSTREAM_VERSION}
         for f in target/aarch64-linux-android/release/*.so; do
-          BASENAME=$(basename "$f" .so)
-          cp "$f" "../arm64-v8a/${BASENAME}-v${UPSTREAM_VERSION}.so"
+          BASENAME=$(basename "$f")
+          cp "$f" "../arm64-v8a/v${UPSTREAM_VERSION}/${BASENAME}"
         done
 
     - name: Commit and push
       run: |
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
-        git add arm64-v8a/*.so
+        git add arm64-v8a/v${UPSTREAM_VERSION}/*.so
         git commit -m "Update ARM64 .so v${UPSTREAM_VERSION}" || exit 0
         git push
