@@ -1,30 +1,26 @@
 name: Build All Binaries
 
 on:
-  workflow_dispatch:   # ✅ Allows manual trigger
+  workflow_dispatch:
 
 permissions:
-  contents: write      # ✅ Needed to commit & push
+  contents: write
 
 jobs:
   build-all:
     runs-on: ubuntu-latest
 
     steps:
-    # 1️⃣ Checkout repo
     - uses: actions/checkout@v4
 
-    # 2️⃣ Clone upstream BuildLimitChanger
-    - name: Clone BuildLimitChanger
+    - name: Clone upstream BuildLimitChanger
       run: git clone https://github.com/Zeuroux/BuildLimitChanger.git
 
-    # 3️⃣ Set up Rust
     - name: Set up Rust toolchain
       uses: actions-rs/toolchain@v1
       with:
         toolchain: stable
 
-    # 4️⃣ Cache Rust dependencies + target folder
     - name: Cache Rust
       uses: actions/cache@v3
       with:
@@ -34,11 +30,9 @@ jobs:
           BuildLimitChanger/target
         key: ${{ runner.os }}-cargo-${{ hashFiles('BuildLimitChanger/Cargo.lock') }}
 
-    # 5️⃣ Install cargo-ndk
     - name: Install cargo-ndk
       run: cargo install cargo-ndk
 
-    # 6️⃣ Add Rust targets
     - name: Add Rust targets
       run: |
         rustup target add aarch64-linux-android
@@ -46,47 +40,56 @@ jobs:
         rustup target add x86_64-pc-windows-msvc
         rustup target add x86_64-unknown-linux-gnu
 
-    # 7️⃣ Build Android ARMv7
+    # Android ARMv7
     - name: Build Android ARMv7 .so
       run: |
         cd BuildLimitChanger
+        echo "::group::Building Android ARMv7 .so"
         sed -i '/\[lib\]/,/crate-type/ s/^crate-type.*$/crate-type = ["cdylib"]/' Cargo.toml || true
-        cat >> Cargo.toml <<'EOF'
-
-[profile.release]
-lto = false
-debug = false
-codegen-units = 16
-EOF
-        cargo ndk -t armeabi-v7a -- build --release
+        echo '[profile.release]' >> Cargo.toml
+        echo 'lto = false' >> Cargo.toml
+        echo 'debug = false' >> Cargo.toml
+        echo 'codegen-units = 16' >> Cargo.toml
+        cargo ndk -t armeabi-v7a -- build --release >/dev/null 2>&1
         mkdir -p ../../binaries/android/armeabi-v7a
         cp target/armv7-linux-androideabi/release/**/*.so ../../binaries/android/armeabi-v7a/
+        echo "✅ Android ARMv7 build completed"
+        echo "::endgroup::"
 
-    # 8️⃣ Build Android ARM64
+    # Android ARM64
     - name: Build Android ARM64 .so
       run: |
         cd BuildLimitChanger
-        cargo ndk -t arm64-v8a -- build --release
+        echo "::group::Building Android ARM64 .so"
+        cargo ndk -t arm64-v8a -- build --release >/dev/null 2>&1
         mkdir -p ../../binaries/android/arm64-v8a
         cp target/aarch64-linux-android/release/**/*.so ../../binaries/android/arm64-v8a/
+        echo "✅ Android ARM64 build completed"
+        echo "::endgroup::"
 
-    # 9️⃣ Build Windows x64
+    # Windows x64 DLL
     - name: Build Windows x64 DLL
       run: |
         cd BuildLimitChanger
-        cargo build --target x86_64-pc-windows-msvc --release
+        echo "::group::Building Windows x64 DLL"
+        cargo build --target x86_64-pc-windows-msvc --release >/dev/null 2>&1
         mkdir -p ../../binaries/windows/x64
         cp target/x86_64-pc-windows-msvc/release/*.dll* ../../binaries/windows/x64/
+        echo "✅ Windows x64 build completed"
+        echo "::endgroup::"
 
-    # 🔟 Build Linux x64
+    # Linux x64 .so
     - name: Build Linux x64 .so
       run: |
         cd BuildLimitChanger
-        cargo build --target x86_64-unknown-linux-gnu --release
+        echo "::group::Building Linux x64 .so"
+        cargo build --target x86_64-unknown-linux-gnu --release >/dev/null 2>&1
         mkdir -p ../../binaries/linux/x64
         cp target/x86_64-unknown-linux-gnu/release/lib*.so ../../binaries/linux/x64/
+        echo "✅ Linux x64 build completed"
+        echo "::endgroup::"
 
-    # 1️⃣1️⃣ Commit and push binaries
+    # Commit binaries
     - name: Commit binaries
       run: |
         git config user.name "github-actions[bot]"
