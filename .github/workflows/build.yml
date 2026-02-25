@@ -3,21 +3,22 @@ name: Build ARM64
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write   # ✅ Required to commit & push
+
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
 
     steps:
-    # 1️⃣ Checkout repo (disable default credentials for push)
+    # 1️⃣ Checkout repo (push enabled via permissions)
     - uses: actions/checkout@v4
-      with:
-        persist-credentials: false
 
     # 2️⃣ Clone upstream BuildLimitChanger
     - name: Clone BuildLimitChanger
       run: git clone https://github.com/Zeuroux/BuildLimitChanger.git
 
-    # 3️⃣ Setup Rust toolchain
+    # 3️⃣ Setup Rust
     - name: Set up Rust
       uses: actions-rs/toolchain@v1
       with:
@@ -25,7 +26,7 @@ jobs:
         target: aarch64-linux-android
         default: true
 
-    # 4️⃣ Cache Rust dependencies and target folder
+    # 4️⃣ Cache Rust dependencies
     - name: Cache Rust
       uses: actions/cache@v3
       with:
@@ -46,17 +47,17 @@ jobs:
         sed -i '/\[lib\]/,/crate-type/ s/^crate-type.*$/crate-type = ["cdylib"]/' Cargo.toml || true
         cargo ndk -t arm64-v8a -- build --release
 
-    # 7️⃣ Copy .so to lib/ folder in repo
-    - name: Copy .so to repo
+    # 7️⃣ Copy .so to repo folder
+    - name: Copy .so to lib/
       run: |
         mkdir -p ./lib
         cp BuildLimitChanger/target/aarch64-linux-android/release/**/*.so ./lib/
 
-    # 8️⃣ Commit & push .so to repo
+    # 8️⃣ Commit & push
     - name: Commit and push .so
       run: |
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
         git add lib/*.so
-        git commit -m "Update ARM64 .so via workflow" || echo "No changes to commit"
-        git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }} HEAD:main
+        git commit -m "Update ARM64 .so via workflow $(date -u +'%Y-%m-%d %H:%M:%S')" || exit 0
+        git push
