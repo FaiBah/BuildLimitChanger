@@ -4,21 +4,24 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write   # ✅ Required to commit & push
+  contents: write
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
 
     steps:
-    # 1️⃣ Checkout repo (push enabled via permissions)
     - uses: actions/checkout@v4
 
-    # 2️⃣ Clone upstream BuildLimitChanger
+    - name: Get latest upstream version
+      id: get_version
+      run: |
+        VERSION=$(curl -s https://api.github.com/repos/Zeuroux/BuildLimitChanger/releases/latest | jq -r .tag_name)
+        echo "UPSTREAM_VERSION=$VERSION" >> $GITHUB_ENV
+
     - name: Clone BuildLimitChanger
       run: git clone https://github.com/Zeuroux/BuildLimitChanger.git
 
-    # 3️⃣ Setup Rust
     - name: Set up Rust
       uses: actions-rs/toolchain@v1
       with:
@@ -26,38 +29,27 @@ jobs:
         target: aarch64-linux-android
         default: true
 
-    # 4️⃣ Cache Rust dependencies
-    - name: Cache Rust
-      uses: actions/cache@v3
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          BuildLimitChanger/target
-        key: ${{ runner.os }}-cargo-${{ hashFiles('BuildLimitChanger/Cargo.lock') }}
-
-    # 5️⃣ Install cargo-ndk
     - name: Install cargo-ndk
       run: cargo install cargo-ndk
 
-    # 6️⃣ Build ARM64 .so
     - name: Build ARM64 .so
       run: |
         cd BuildLimitChanger
         sed -i '/\[lib\]/,/crate-type/ s/^crate-type.*$/crate-type = ["cdylib"]/' Cargo.toml || true
         cargo ndk -t arm64-v8a -- build --release
 
-    # 7️⃣ Copy .so to repo folder
-    - name: Copy .so to lib-arm64-v8a/
+    - name: Copy .so with upstream version
       run: |
-        mkdir -p ./lib-arm64-v8a
-        cp BuildLimitChanger/target/aarch64-linux-android/release/**/*.so ./lib-arm64-v8a/
+        mkdir -p ../arm64-v8a
+        for f in target/aarch64-linux-android/release/*.so; do
+          BASENAME=$(basename "$f" .so)
+          cp "$f" "../arm64-v8a/${BASENAME}-v${UPSTREAM_VERSION}.so"
+        done
 
-    # 8️⃣ Commit & push
-    - name: Commit and push .so
+    - name: Commit and push
       run: |
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
-        git add lib-arm64-v8a/*.so
-        git commit -m "Update ARM64 .so via workflow $(date -u +'%Y-%m-%d %H:%M:%S')" || exit 0
+        git add arm64-v8a/*.so
+        git commit -m "Update ARM64 .so v${UPSTREAM_VERSION}" || exit 0
         git push
