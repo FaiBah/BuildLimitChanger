@@ -1,4 +1,4 @@
-name: Build All Binaries with NDK
+name: Build All Binaries
 
 on:
   workflow_dispatch:
@@ -11,14 +11,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    # 1️⃣ Checkout repository
     - uses: actions/checkout@v4
 
-    # 2️⃣ Clone upstream BuildLimitChanger
-    - name: Clone BuildLimitChanger
+    - name: Clone upstream BuildLimitChanger
       run: git clone https://github.com/Zeuroux/BuildLimitChanger.git
 
-    # 3️⃣ Install Android NDK correctly
     - name: Install Android NDK
       run: |
         sudo apt update
@@ -28,13 +25,11 @@ jobs:
         echo "ANDROID_NDK_HOME=$HOME/android-ndk/android-ndk-r25b" >> $GITHUB_ENV
         echo "$HOME/android-ndk/android-ndk-r25b" >> $GITHUB_PATH
 
-    # 4️⃣ Set up Rust
     - name: Set up Rust
       uses: actions-rs/toolchain@v1
       with:
         toolchain: stable
 
-    # 5️⃣ Add Rust targets
     - name: Add Rust targets
       run: |
         rustup target add aarch64-linux-android
@@ -42,8 +37,7 @@ jobs:
         rustup target add x86_64-pc-windows-msvc
         rustup target add x86_64-unknown-linux-gnu
 
-    # 6️⃣ Cache Rust dependencies
-    - name: Cache Rust
+    - name: Cache Rust dependencies
       uses: actions/cache@v3
       with:
         path: |
@@ -52,47 +46,60 @@ jobs:
           BuildLimitChanger/target
         key: ${{ runner.os }}-cargo-${{ hashFiles('BuildLimitChanger/Cargo.lock') }}
 
-    # 7️⃣ Install cargo-ndk
     - name: Install cargo-ndk
       run: cargo install cargo-ndk
 
-    # 8️⃣ Build Android ARMv7 .so
+    # Android ARMv7
     - name: Build Android ARMv7 .so
       run: |
         cd BuildLimitChanger
-        echo '[profile.release]' >> Cargo.toml
-        echo 'lto = false' >> Cargo.toml
-        echo 'debug = false' >> Cargo.toml
-        echo 'codegen-units = 16' >> Cargo.toml
-        cargo ndk -t armeabi-v7a -- build --release
+        ::group::Building Android ARMv7 .so
+        if ! grep -q "^\[profile.release\]" Cargo.toml; then
+          echo '[profile.release]' >> Cargo.toml
+          echo 'lto = false' >> Cargo.toml
+          echo 'debug = false' >> Cargo.toml
+          echo 'codegen-units = 16' >> Cargo.toml
+        fi
+        cargo ndk -t armeabi-v7a -- build --release >/dev/null 2>&1
         mkdir -p ../../binaries/android/armeabi-v7a
         cp target/armv7-linux-androideabi/release/**/*.so ../../binaries/android/armeabi-v7a/
+        echo "✅ Android ARMv7 build completed"
+        ::endgroup::
 
-    # 9️⃣ Build Android ARM64 .so
+    # Android ARM64
     - name: Build Android ARM64 .so
       run: |
         cd BuildLimitChanger
-        cargo ndk -t arm64-v8a -- build --release
+        ::group::Building Android ARM64 .so
+        cargo ndk -t arm64-v8a -- build --release >/dev/null 2>&1
         mkdir -p ../../binaries/android/arm64-v8a
         cp target/aarch64-linux-android/release/**/*.so ../../binaries/android/arm64-v8a/
+        echo "✅ Android ARM64 build completed"
+        ::endgroup::
 
-    # 🔟 Build Windows x64 DLL
+    # Windows x64
     - name: Build Windows x64 DLL
       run: |
         cd BuildLimitChanger
-        cargo build --target x86_64-pc-windows-msvc --release
+        ::group::Building Windows x64 DLL
+        cargo build --target x86_64-pc-windows-msvc --release >/dev/null 2>&1
         mkdir -p ../../binaries/windows/x64
         cp target/x86_64-pc-windows-msvc/release/*.dll* ../../binaries/windows/x64/
+        echo "✅ Windows x64 build completed"
+        ::endgroup::
 
-    # 1️⃣1️⃣ Build Linux x64 .so
+    # Linux x64
     - name: Build Linux x64 .so
       run: |
         cd BuildLimitChanger
-        cargo build --target x86_64-unknown-linux-gnu --release
+        ::group::Building Linux x64 .so
+        cargo build --target x86_64-unknown-linux-gnu --release >/dev/null 2>&1
         mkdir -p ../../binaries/linux/x64
         cp target/x86_64-unknown-linux-gnu/release/lib*.so ../../binaries/linux/x64/
+        echo "✅ Linux x64 build completed"
+        ::endgroup::
 
-    # 1️⃣2️⃣ Commit binaries
+    # Commit binaries
     - name: Commit binaries
       run: |
         git config user.name "github-actions[bot]"
