@@ -1,25 +1,16 @@
-name: Build and Commit All Targets
+name: Build All Targets
 
 on:
   workflow_dispatch:
 
 permissions:
-  contents: write  # Needed to push files back
+  contents: write  # Needed to push files
 
 jobs:
-  build:
+  build-all:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        target:
-          - i686-linux-android
-          - x86_64-linux-android
-          - aarch64-linux-android
-          - x86_64-pc-windows-gnu
-          - x86_64-unknown-linux-gnu
-
     steps:
-      # 1️⃣ Checkout your fork (where binaries will be pushed)
+      # 1️⃣ Checkout your fork
       - uses: actions/checkout@v4
 
       # 2️⃣ Get latest upstream version
@@ -38,37 +29,57 @@ jobs:
       - name: Setup Rust
         run: rustup update stable
 
-      # 5️⃣ Install cross-compilation tools
-      - name: Setup cross toolchain
-        uses: taiki-e/setup-cross-toolchain-action@v1
-        with:
-          target: ${{ matrix.target }}
-
-      # 6️⃣ Build the target
-      - name: Build
+      # 5️⃣ Define target list
+      - name: Set targets
         run: |
-          cd BuildLimitChanger
-          cargo build --profile release
-        env:
-          CARGO_PROFILE_RELEASE_LTO: "fat"
-          CARGO_PROFILE_RELEASE_STRIP: "symbols"
-          CARGO_PROFILE_RELEASE_CODEGEN_UNITS: 1
+          echo "TARGETS=i686-linux-android x86_64-linux-android aarch64-linux-android x86_64-pc-windows-gnu x86_64-unknown-linux-gnu" >> $GITHUB_ENV
 
-      # 7️⃣ Copy binaries into versioned folder
-      - name: Copy binaries into versioned folder
+      # 6️⃣ Build each target one by one
+      - name: Build targets
         run: |
-          mkdir -p ../${UPSTREAM_VERSION}/${{ matrix.target }}
-          if [[ "${{ matrix.target }}" == *"windows"* ]]; then
-            cp BuildLimitChanger/target/${{ matrix.target }}/release/BuildLimitChanger.dll ../${UPSTREAM_VERSION}/${{ matrix.target }}/
-          else
-            cp BuildLimitChanger/target/${{ matrix.target }}/release/libBuildLimitChanger.so ../${UPSTREAM_VERSION}/${{ matrix.target }}/
-          fi
+          for TARGET in $TARGETS; do
+            echo "=== Building $TARGET ==="
+            # Install cross-compilation tools for this target
+            if [[ "$TARGET" == *"windows"* ]] || [[ "$TARGET" == *"linux"* ]]; then
+              echo "Setup cross toolchain for $TARGET"
+              curl -s https://raw.githubusercontent.com/taiki-e/setup-cross-toolchain-action/main/install.sh | bash -s $TARGET
+            fi
 
-      # 8️⃣ Commit and push binaries to your fork
+            cd BuildLimitChanger
+            cargo build --target $TARGET --profile release \
+              CARGO_PROFILE_RELEASE_LTO="fat" \
+              CARGO_PROFILE_RELEASE_STRIP="symbols" \
+              CARGO_PROFILE_RELEASE_CODEGEN_UNITS="1"
+
+            cd ..
+
+            # Prepare folder
+            mkdir -p v${UPSTREAM_VERSION}/$TARGET
+
+            # Copy binary if exists
+            if [[ "$TARGET" == *"windows"* ]]; then
+              BIN_PATH="BuildLimitChanger/target/$TARGET/release/BuildLimitChanger.dll"
+            else
+              BIN_PATH="BuildLimitChanger/target/$TARGET/release/libBuildLimitChanger.so"
+            fi
+
+            if [[ -f "$BIN_PATH" ]]; then
+              cp "$BIN_PATH" v${UPSTREAM_VERSION}/$TARGET/
+              echo "Copied $BIN_PATH to v${UPSTREAM_VERSION}/$TARGET/"
+            else
+              echo "No binary found for $TARGET, skipping"
+            fi
+          done
+
+      # 7️⃣ Commit & push existing binaries only
       - name: Commit and push binaries
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add ${UPSTREAM_VERSION}/${{ matrix.target }}/*
-          git commit -m "Add binaries for ${UPSTREAM_VERSION} [${{ matrix.target }}]" || echo "No changes to commit"
-          git push
+          FILES=$(find v${UPSTREAM_VERSION} -type f -name "*.so" -o -name "*.dll")
+          if [[ -n "$FILES" ]]; then
+            git add $FILES
+            git commit -m "Add binaries for ${UPSTREAM_VERSION}" || echo "No changes to commit"
+            git push
+          else
+            echo "No binaries to commit"
