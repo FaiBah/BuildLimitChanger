@@ -1,0 +1,78 @@
+name: Build All Binaries
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-all:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repo
+      uses: actions/checkout@v4
+
+    - name: Clone BuildLimitChanger
+      run: git clone https://github.com/Zeuroux/BuildLimitChanger.git
+
+    - name: Set up Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+
+    - name: Cache Rust
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          BuildLimitChanger/target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('BuildLimitChanger/Cargo.lock') }}
+
+    - name: Install cargo-ndk
+      run: cargo install cargo-ndk
+
+    # ⚙️ Build Android ARMv7
+    - name: Build Android ARMv7 .so
+      run: |
+        cd BuildLimitChanger
+        sed -i '/\[lib\]/,/crate-type/ s/^crate-type.*$/crate-type = ["cdylib"]/' Cargo.toml || true
+        cargo ndk -t armeabi-v7a -- build --release
+        mkdir -p ../../binaries/android/armeabi-v7a
+        cp target/armv7-linux-androideabi/release/**/*.so ../../binaries/android/armeabi-v7a/
+
+    # ⚙️ Build Android ARM64 .so
+    - name: Build Android ARM64 .so
+      run: |
+        cd BuildLimitChanger
+        cargo ndk -t arm64-v8a -- build --release
+        mkdir -p ../../binaries/android/arm64-v8a
+        cp target/aarch64-linux-android/release/**/*.so ../../binaries/android/arm64-v8a/
+
+    # ⚙️ Build Windows x64 DLL
+    - name: Build Windows x64
+      run: |
+        rustup target add x86_64-pc-windows-msvc
+        cd BuildLimitChanger
+        cargo build --target x86_64-pc-windows-msvc --release
+        mkdir -p ../../binaries/windows/x64
+        cp target/x86_64-pc-windows-msvc/release/*.dll* ../../binaries/windows/x64/
+
+    # ⚙️ Build Linux x64 .so
+    - name: Build Linux x64
+      run: |
+        cd BuildLimitChanger
+        cargo build --target x86_64-unknown-linux-gnu --release
+        mkdir -p ../../binaries/linux/x64
+        cp target/x86_64-unknown-linux-gnu/release/lib*.so ../../binaries/linux/x64/
+
+    # Save all artifacts
+    - name: Commit all builds
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git add binaries
+        git commit -m "Add all build binaries via workflow" || exit 0
+        git push
