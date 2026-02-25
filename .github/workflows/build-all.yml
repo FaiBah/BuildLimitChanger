@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    # 1️⃣ Checkout repo (your workflow, minimal)
+    # 1️⃣ Checkout repo
     - uses: actions/checkout@v4
 
     # 2️⃣ Clone original BuildLimitChanger
@@ -36,41 +36,38 @@ jobs:
         target: ${{ matrix.target }}
         default: true
 
-    # 4️⃣ Install cargo-ndk for Android
+    # 4️⃣ Install cargo-ndk for Android targets
     - name: Install cargo-ndk
-      if: startsWith(matrix.target, 'aarch64') || startsWith(matrix.target, 'i686')
+      if: ${{ matrix.target == 'aarch64-linux-android' || matrix.target == 'i686-linux-android' }}
       run: cargo install cargo-ndk || true
 
     # 5️⃣ Build target
     - name: Build target
       run: |
-        VERSION=${GITHUB_REF#refs/tags/}  # Use tag name as version
-        ARCH_FOLDER=""
-        SRC_FOLDER=""
+        VERSION=${GITHUB_REF#refs/tags/}  # Tag name as version
+        mkdir -p binaries/${VERSION}
+
         if [[ "${{ matrix.target }}" == "aarch64-linux-android" ]]; then
           cd BuildLimitChanger
           cargo ndk -t arm64-v8a -- build --release
-          ARCH_FOLDER="arm64-v8a"
-          SRC_FOLDER="target/aarch64-linux-android/release"
+          mkdir -p ../binaries/${VERSION}/arm64-v8a
+          cp target/aarch64-linux-android/release/*.so ../binaries/${VERSION}/arm64-v8a/ || true
         elif [[ "${{ matrix.target }}" == "i686-linux-android" ]]; then
           cd BuildLimitChanger
           cargo ndk -t armeabi-v7a -- build --release
-          ARCH_FOLDER="armeabi-v7a"
-          SRC_FOLDER="target/i686-linux-android/release"
+          mkdir -p ../binaries/${VERSION}/armeabi-v7a
+          cp target/i686-linux-android/release/*.so ../binaries/${VERSION}/armeabi-v7a/ || true
         elif [[ "${{ matrix.target }}" == *"windows"* ]]; then
           cd BuildLimitChanger
           cargo build --target ${{ matrix.target }} --release
-          ARCH_FOLDER="windows"
-          SRC_FOLDER="target/${{ matrix.target }}/release"
+          mkdir -p ../binaries/${VERSION}/windows
+          cp target/${{ matrix.target }}/release/*.dll ../binaries/${VERSION}/windows/ || true
         else
           cd BuildLimitChanger
           cargo build --target ${{ matrix.target }} --release
-          ARCH_FOLDER="linux"
-          SRC_FOLDER="target/${{ matrix.target }}/release"
+          mkdir -p ../binaries/${VERSION}/linux
+          cp target/${{ matrix.target }}/release/*.so ../binaries/${VERSION}/linux/ || true
         fi
-
-        mkdir -p ../binaries/${VERSION}/${ARCH_FOLDER}
-        cp $SRC_FOLDER/*.{so,dll} ../binaries/${VERSION}/${ARCH_FOLDER}/ || true
 
     # 6️⃣ Build Changelog
     - name: Build Changelog
@@ -90,10 +87,11 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-    # 7️⃣ Create Release
-    - name: Create GitHub Release
+    # 7️⃣ Create GitHub Release
+    - name: Create Release
       uses: mikepenz/action-gh-release@v1
       with:
         body: ${{ steps.github_release.outputs.changelog }}
-        files: binaries/${GITHUB_REF#refs/tags/}/**/*.so
-               binaries/${GITHUB_REF#refs/tags/}/**/*.dll
+        files: |
+          binaries/${GITHUB_REF#refs/tags/}/**/*.so
+          binaries/${GITHUB_REF#refs/tags/}/**/*.dll
