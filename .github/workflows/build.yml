@@ -1,19 +1,23 @@
-name: Build ARM64 and upload all
+name: Build ARM64
 
 on:
   workflow_dispatch:
 
 jobs:
-  build:
+  build-and-commit:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout repo
-      uses: actions/checkout@v4
+    # 1️⃣ Checkout repo with push permissions
+    - uses: actions/checkout@v4
+      with:
+        persist-credentials: true
 
-    - name: Clone upstream BuildLimitChanger
+    # 2️⃣ Clone upstream repo
+    - name: Clone BuildLimitChanger
       run: git clone https://github.com/Zeuroux/BuildLimitChanger.git
 
+    # 3️⃣ Setup Rust toolchain
     - name: Set up Rust
       uses: actions-rs/toolchain@v1
       with:
@@ -21,7 +25,8 @@ jobs:
         target: aarch64-linux-android
         default: true
 
-    - name: Cache Rust dependencies
+    # 4️⃣ Cache Rust dependencies
+    - name: Cache Rust
       uses: actions/cache@v3
       with:
         path: |
@@ -30,20 +35,28 @@ jobs:
           BuildLimitChanger/target
         key: ${{ runner.os }}-cargo-${{ hashFiles('BuildLimitChanger/Cargo.lock') }}
 
+    # 5️⃣ Install cargo-ndk
     - name: Install cargo-ndk
       run: cargo install cargo-ndk
 
+    # 6️⃣ Build ARM64 .so
     - name: Build ARM64 .so
       run: |
         cd BuildLimitChanger
         sed -i '/\[lib\]/,/crate-type/ s/^crate-type.*$/crate-type = ["cdylib"]/' Cargo.toml || true
         cargo ndk -t arm64-v8a -- build --release
 
-    - name: List build output
-      run: ls -R BuildLimitChanger/target/aarch64-linux-android/release/
+    # 7️⃣ Copy .so to repo
+    - name: Copy .so to repo
+      run: |
+        mkdir -p ./lib
+        cp BuildLimitChanger/target/aarch64-linux-android/release/**/*.so ./lib/
 
-    - name: Upload all build files
-      uses: actions/upload-artifact@v4
-      with:
-        name: buildlimitchanger-arm64-all
-        path: BuildLimitChanger/target/aarch64-linux-android/release/
+    # 8️⃣ Commit & push .so
+    - name: Commit and push .so
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git add lib/*.so
+        git commit -m "Update ARM64 .so via workflow" || echo "No changes to commit"
+        git push
