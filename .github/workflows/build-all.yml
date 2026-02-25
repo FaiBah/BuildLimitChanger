@@ -52,52 +52,52 @@ jobs:
     # Android ARMv7
     - name: Build Android ARMv7 .so
       run: |
-        cd BuildLimitChanger
-        ::group::Building Android ARMv7 .so
-        if ! grep -q "^\[profile.release\]" Cargo.toml; then
-          echo '[profile.release]' >> Cargo.toml
-          echo 'lto = false' >> Cargo.toml
-          echo 'debug = false' >> Cargo.toml
-          echo 'codegen-units = 16' >> Cargo.toml
+        echo "::group::Building Android ARMv7 .so"
+        if ! grep -q "^\[profile.release\]" BuildLimitChanger/Cargo.toml; then
+          echo '[profile.release]' >> BuildLimitChanger/Cargo.toml
+          echo 'lto = false' >> BuildLimitChanger/Cargo.toml
+          echo 'debug = false' >> BuildLimitChanger/Cargo.toml
+          echo 'codegen-units = 16' >> BuildLimitChanger/Cargo.toml
         fi
+        cd BuildLimitChanger
         cargo ndk -t armeabi-v7a -- build --release >/dev/null 2>&1
-        mkdir -p ../../binaries/android/armeabi-v7a
-        cp target/armv7-linux-androideabi/release/**/*.so ../../binaries/android/armeabi-v7a/
+        mkdir -p ../binaries/android/armeabi-v7a
+        cp target/armv7-linux-androideabi/release/*.so ../binaries/android/armeabi-v7a/
         echo "✅ Android ARMv7 build completed"
-        ::endgroup::
+        echo "::endgroup::"
 
     # Android ARM64
     - name: Build Android ARM64 .so
       run: |
+        echo "::group::Building Android ARM64 .so"
         cd BuildLimitChanger
-        ::group::Building Android ARM64 .so
         cargo ndk -t arm64-v8a -- build --release >/dev/null 2>&1
-        mkdir -p ../../binaries/android/arm64-v8a
-        cp target/aarch64-linux-android/release/**/*.so ../../binaries/android/arm64-v8a/
+        mkdir -p ../binaries/android/arm64-v8a
+        cp target/aarch64-linux-android/release/*.so ../binaries/android/arm64-v8a/
         echo "✅ Android ARM64 build completed"
-        ::endgroup::
+        echo "::endgroup::"
 
     # Windows x64
     - name: Build Windows x64 DLL
       run: |
+        echo "::group::Building Windows x64 DLL"
         cd BuildLimitChanger
-        ::group::Building Windows x64 DLL
         cargo build --target x86_64-pc-windows-msvc --release >/dev/null 2>&1
-        mkdir -p ../../binaries/windows/x64
-        cp target/x86_64-pc-windows-msvc/release/*.dll* ../../binaries/windows/x64/
+        mkdir -p ../binaries/windows/x64
+        cp target/x86_64-pc-windows-msvc/release/*.dll* ../binaries/windows/x64/
         echo "✅ Windows x64 build completed"
-        ::endgroup::
+        echo "::endgroup::"
 
     # Linux x64
     - name: Build Linux x64 .so
       run: |
+        echo "::group::Building Linux x64 .so"
         cd BuildLimitChanger
-        ::group::Building Linux x64 .so
         cargo build --target x86_64-unknown-linux-gnu --release >/dev/null 2>&1
-        mkdir -p ../../binaries/linux/x64
-        cp target/x86_64-unknown-linux-gnu/release/lib*.so ../../binaries/linux/x64/
+        mkdir -p ../binaries/linux/x64
+        cp target/x86_64-unknown-linux-gnu/release/lib*.so ../binaries/linux/x64/
         echo "✅ Linux x64 build completed"
-        ::endgroup::
+        echo "::endgroup::"
 
     # Commit binaries
     - name: Commit binaries
