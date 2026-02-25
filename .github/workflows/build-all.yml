@@ -4,16 +4,14 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write  # Needed to push files
+  contents: write
 
 jobs:
   build-all:
     runs-on: ubuntu-latest
     steps:
-      # 1️⃣ Checkout your fork
       - uses: actions/checkout@v4
 
-      # 2️⃣ Get latest upstream version
       - name: Get latest upstream version
         id: version
         run: |
@@ -21,28 +19,26 @@ jobs:
           echo "UPSTREAM_VERSION=$VERSION" >> $GITHUB_ENV
           echo "Upstream version: $VERSION"
 
-      # 3️⃣ Clone upstream repository
       - name: Clone upstream BuildLimitChanger
         run: git clone https://github.com/Zeuroux/BuildLimitChanger.git
 
-      # 4️⃣ Setup Rust
       - name: Setup Rust
         run: rustup update stable
 
-      # 5️⃣ Define target list
       - name: Set targets
         run: |
           echo "TARGETS=i686-linux-android x86_64-linux-android aarch64-linux-android x86_64-pc-windows-gnu x86_64-unknown-linux-gnu" >> $GITHUB_ENV
 
-      # 6️⃣ Build each target one by one
+      # Build each target one by one
       - name: Build targets
         run: |
           for TARGET in $TARGETS; do
             echo "=== Building $TARGET ==="
-            # Install cross-compilation tools for this target
+
+            # Use GitHub Action to setup cross-toolchain
             if [[ "$TARGET" == *"windows"* ]] || [[ "$TARGET" == *"linux"* ]]; then
-              echo "Setup cross toolchain for $TARGET"
-              curl -s https://raw.githubusercontent.com/taiki-e/setup-cross-toolchain-action/main/install.sh | bash -s $TARGET
+              echo "Using setup-cross-toolchain-action for $TARGET"
+              gh workflow run taiki-e/setup-cross-toolchain-action@v1 --target $TARGET
             fi
 
             cd BuildLimitChanger
@@ -50,10 +46,9 @@ jobs:
               CARGO_PROFILE_RELEASE_LTO="fat" \
               CARGO_PROFILE_RELEASE_STRIP="symbols" \
               CARGO_PROFILE_RELEASE_CODEGEN_UNITS="1"
-
             cd ..
 
-            # Prepare folder
+            # Prepare versioned folder
             mkdir -p v${UPSTREAM_VERSION}/$TARGET
 
             # Copy binary if exists
@@ -71,7 +66,6 @@ jobs:
             fi
           done
 
-      # 7️⃣ Commit & push existing binaries only
       - name: Commit and push binaries
         run: |
           git config user.name "github-actions[bot]"
