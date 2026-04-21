@@ -1,0 +1,68 @@
+name: Build ARM64 (Release)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+    # 1️⃣ Checkout repo
+    - name: Checkout repository
+      uses: actions/checkout@v4.2.0
+
+    # 2️⃣ Get latest upstream version
+    - name: Get latest upstream version
+      id: get_version
+      run: |
+        VERSION=$(curl -s https://api.github.com/repos/Zeuroux/BuildLimitChanger/releases/latest | jq -r .tag_name)
+        echo "UPSTREAM_VERSION=$VERSION" >> $GITHUB_ENV
+        echo "Upstream version: $VERSION"
+
+    # 3️⃣ Clone BuildLimitChanger
+    - name: Clone BuildLimitChanger
+      run: git clone https://github.com/Zeuroux/BuildLimitChanger.git
+
+    # 4️⃣ Setup Rust
+    - name: Set up Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        target: aarch64-linux-android
+        default: true
+
+    # 5️⃣ Install cargo-ndk
+    - name: Install cargo-ndk
+      run: cargo install cargo-ndk
+
+    # 6️⃣ Build ARM64 .so
+    - name: Build ARM64 .so
+      run: |
+        cd BuildLimitChanger
+        sed -i '/\[lib\]/,/crate-type/ s/^crate-type.*$/crate-type = ["cdylib"]/' Cargo.toml || true
+        cargo ndk -t arm64-v8a -- build --release
+        echo "List target folder:"
+        ls -l target/aarch64-linux-android/release/
+
+    # 7️⃣ Copy .so into versioned folder
+    - name: Copy .so into versioned folder
+      run: |
+        mkdir -p ./release
+        cp BuildLimitChanger/target/aarch64-linux-android/release/*.so ./release/
+
+    # 8️⃣ Create Release
+    - name: Create Release
+      uses: softprops/action-gh-release@v2.0.4
+      with:
+        tag_name: ${{ env.UPSTREAM_VERSION }}
+        name: BuildLimitChanger ${{ env.UPSTREAM_VERSION }}
+        body: ARM64 Release
+        files: release/*.so
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
